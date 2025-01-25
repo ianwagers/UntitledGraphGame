@@ -1,20 +1,26 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
-import eruda from 'eruda';
+// CLIENT - App.tsx
 
-type NodeData = {
+import React, { useEffect, useState } from "react";
+import { io, Socket } from "socket.io-client";
+import Eruda from "eruda";
+
+// Types matching your server
+interface NodeData {
   id: number;
-  adjacency: number[]; // If the server is sending adjacency
+  adjacency: number[];
   owner: string | null;
+  ownerColor: string | null;
   troops: number;
-};
+}
 
-type GameState = {
+interface GameState {
   nodes: NodeData[];
-};
+}
 
-// Hardcode positions in a 3x3 layout
-const nodePositions: Record<number, { x: number; y: number }> = {
+const SOCKET_SERVER_URL = "http://10.0.0.187:3001"; // Replace with your server IP/port
+
+// Pre-define positions for each node in a 3x3 layout
+const NODE_POSITIONS: Record<number, { x: number; y: number }> = {
   1: { x: 50,  y: 50  },
   2: { x: 150, y: 50  },
   3: { x: 250, y: 50  },
@@ -26,37 +32,52 @@ const nodePositions: Record<number, { x: number; y: number }> = {
   9: { x: 250, y: 250 },
 };
 
-// Decide a radius for each node's circle
-const NODE_RADIUS = 20;
-
-if (import.meta.env.DEV) {
-  eruda.init();
-}
-
-function App() {
+const App: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
 
-  // For selecting nodes
-  const [selectedNode, setSelectedNode] = useState<number | null>(null);
-  const [troopAmount, setTroopAmount] = useState<number>(10); // default to 10
+  // Track troop sending
+  const [selectedFromNode, setSelectedFromNode] = useState<number | null>(null);
+  const [selectedToNode, setSelectedToNode] = useState<number | null>(null);
+  const [troopAmount, setTroopAmount] = useState<number>(10);
 
-  // Canvas reference
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Lobby & player info
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#ffffff");
+
+  // Has this local player chosen a start node?
+  const [hasSelectedStartNode, setHasSelectedStartNode] = useState(false);
+
+  // Has the server signaled game started?
+  const [gameStarted, setGameStarted] = useState(false);
+
+  // After name is entered, show the game board
+  const [inLobby, setInLobby] = useState(true);
 
   useEffect(() => {
-    // Connect to the server
-    const newSocket = io('http://localhost:3001');
+    // Initialize Eruda for debugging on mobile
+    if (typeof window !== "undefined") {
+      //Eruda.init();
+      console.log("Skipping Eruda for now");
+    }
+
+    // Connect Socket.IO
+    const newSocket = io(SOCKET_SERVER_URL);
     setSocket(newSocket);
 
-    // On initial connection
-    newSocket.on('connect', () => {
-      console.log('Connected to server:', newSocket.id);
+    // Listen for game state updates
+    newSocket.on("gameState", (state: GameState) => {
+      setGameState(state);
     });
 
-    newSocket.on('gameState', (state) => {
-      console.log('Received gameState:', state);
-      setGameState(state);
+    // Listen for "startGame" event from server
+    newSocket.on("startGame", () => {
+      setGameStarted(true);
+    });
+
+    // Listen for when this player successfully selects a start node
+    newSocket.on("selectStartNodeSuccess", () => {
+      setHasSelectedStartNode(true);
     });
 
     // Cleanup on unmount
@@ -65,136 +86,249 @@ function App() {
     };
   }, []);
 
-  // Each time gameState changes, re-draw the canvas
   useEffect(() => {
-    drawCanvas();
-  }, [gameState]);
+    if (socket) {
+      socket.on("gameOver", ({ winnerId, winnerName }) => {
+        alert(`Game Over! The winner is ${winnerName}`);
+        // Optionally show some UI or reload
+      });
+    }
+  }, [socket]);  
 
-  // Draw the nodes & edges
-  const drawCanvas = () => {
-    if (!canvasRef.current || !gameState) return;
+  // Once user sets name/color, we join the game & show the map
+  const handleJoinGame = () => {
+    if (!socket) return;
 
-    const ctx = canvasRef.current.getContext('2d');
-    if (!ctx) return;
-
-    // Clear the canvas
-    ctx.clearRect(0, 0, 400, 400);
-
-    // Draw edges first (if adjacency is in the gameState)
-    for (const node of gameState.nodes) {
-      for (const adj of node.adjacency) {
-        // We only want to draw each edge once, so for example,
-        // draw if adj > node.id to avoid double-drawing
-        if (adj > node.id) {
-          const fromPos = nodePositions[node.id];
-          const toPos = nodePositions[adj];
-          ctx.beginPath();
-          ctx.strokeStyle = '#888';
-          ctx.moveTo(fromPos.x, fromPos.y);
-          ctx.lineTo(toPos.x, toPos.y);
-          ctx.stroke();
-        }
-      }
+    if (name.trim() === "") {
+      alert("Please enter a valid name!");
+      return;
     }
 
-    // Draw nodes
-    for (const node of gameState.nodes) {
-      const { x, y } = nodePositions[node.id];
-      // Fill color depends on owner
-      let fillColor = '#ccc';
-      if (node.owner === 'player1') fillColor = 'blue';
-      if (node.owner === 'player2') fillColor = 'red';
-
-      // Draw circle
-      ctx.beginPath();
-      ctx.fillStyle = fillColor;
-      ctx.arc(x, y, NODE_RADIUS, 0, 2 * Math.PI);
-      ctx.fill();
-
-      // Draw outline
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#000';
-      ctx.stroke();
-
-      // Draw troop count
-      ctx.fillStyle = '#000';
-      ctx.font = '16px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`${node.troops}`, x, y);
-    }
+    // Send info to server
+    socket.emit("setPlayerInfo", { name, color });
+    // Move out of the lobby
+    setInLobby(false);
   };
 
-  // Handle click on canvas to see which node was clicked
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current || !gameState) return;
+  // Handle node click
+  // If the game hasn't started, we might be selecting our start node
+  // If the game has started, we might be selecting from/to nodes for troop sending
+  const handleNodeClick = (nodeId: number) => {
+    if (!socket || !gameState) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
-
-    // Find if click is within any node's circle
-    let clickedNodeId: number | null = null;
-    for (const node of gameState.nodes) {
-      const { x, y } = nodePositions[node.id];
-      const dist = Math.sqrt(Math.pow(clickX - x, 2) + Math.pow(clickY - y, 2));
-      if (dist <= NODE_RADIUS) {
-        clickedNodeId = node.id;
-        break;
+    // If the game hasn't started, we are picking our starting node
+    if (!gameStarted) {
+      if (!hasSelectedStartNode) {
+        // Attempt to select this node as start node
+        socket.emit("selectStartNode", { nodeId });
       }
+      return;
     }
 
-    if (clickedNodeId) {
-      // If we have no selectedNode, set it
-      if (selectedNode === null) {
-        setSelectedNode(clickedNodeId);
+    // Otherwise, game is in progress => choose from/to for sending
+    if (selectedFromNode === null) {
+      setSelectedFromNode(nodeId);
+    } else if (selectedToNode === null) {
+      // if the user clicks the same node for "to", ignore or reset:
+      if (nodeId === selectedFromNode) {
+        // same node clicked, let's reset
+        setSelectedFromNode(null);
+        setSelectedToNode(null);
       } else {
-        // We already had a selectedNode, so attempt to send troops from selectedNode -> clickedNodeId
-        if (socket) {
-          socket.emit('sendTroops', {
-            fromNodeId: selectedNode,
-            toNodeId: clickedNodeId,
-            amount: troopAmount,
-          });
-        }
-        // Reset selection (or you might want to keep fromNode the same)
-        setSelectedNode(null);
+        setSelectedToNode(nodeId);
       }
+    } else {
+      // If fromNode and toNode are already set, let's reset
+      setSelectedFromNode(nodeId);
+      setSelectedToNode(null);
     }
   };
 
-  // We can display which node is selected, and the troop amount
-  return (
-    <div style={{ textAlign: 'center' }}>
-      <h1>Graph RTS Tycoon (Canvas Demo)</h1>
+  // Emit 'sendTroops' to server
+  const handleSendTroops = () => {
+    if (!socket || selectedFromNode === null || selectedToNode === null) return;
+    socket.emit("sendTroops", {
+      fromNodeId: selectedFromNode,
+      toNodeId: selectedToNode,
+      amount: troopAmount,
+    });
+  };
 
-      <p>Click one node to select it as the FROM node, then click another to send troops.</p>
+  // Render edges (lines) for adjacency
+  const renderEdges = () => {
+    if (!gameState) return null;
 
-      <div style={{ margin: '1rem auto' }}>
-        <label>Troop Amount: </label>
-        <input
-          type='number'
-          value={troopAmount}
-          onChange={(e) => setTroopAmount(Number(e.target.value))}
-          style={{ width: '60px' }}
-        />
+    const lines: React.ReactNode[] = [];
+    for (let node of gameState.nodes) {
+      const { x: x1, y: y1 } = NODE_POSITIONS[node.id];
+      for (let adj of node.adjacency) {
+        // draw each edge only once
+        if (adj > node.id) {
+          const { x: x2, y: y2 } = NODE_POSITIONS[adj];
+          lines.push(
+            <line
+              key={`edge-${node.id}-${adj}`}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke="black"
+              strokeWidth={2}
+            />
+          );
+        }
+      }
+    }
+    return lines;
+  };
+
+  // Render the 9 circles (one for each node)
+  const renderNodes = () => {
+    if (!gameState) return null;
+
+    return gameState.nodes.map((node) => {
+      const { x, y } = NODE_POSITIONS[node.id];
+      const fillColor = node.ownerColor ? node.ownerColor : "gray";
+
+      // Outline if this node is the currently selected "from" node
+      const isFromSelected = node.id === selectedFromNode;
+
+      return (
+        <React.Fragment key={node.id}>
+          <circle
+            cx={x}
+            cy={y}
+            r={20}
+            fill={fillColor}
+            stroke={isFromSelected ? "yellow" : "black"}
+            strokeWidth={isFromSelected ? 4 : 2}
+            onClick={() => handleNodeClick(node.id)}
+            style={{ cursor: "pointer" }}
+          />
+          <text
+            x={x}
+            y={y + 5}
+            textAnchor="middle"
+            fontSize={14}
+            fill="white"
+            fontWeight="bold"
+          >
+            {node.troops}
+          </text>
+        </React.Fragment>
+      );
+    });
+  };
+
+  // If still in the lobby, show name/color selection
+  if (inLobby) {
+    return (
+      <div style={{ textAlign: "center", marginTop: "50px" }}>
+        <h1>Untitled Graph Game</h1>
+        <p>Enter your name and color to join the game.</p>
+        <label>
+          Name:
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            style={{ marginLeft: "10px", padding: "5px" }}
+          />
+        </label>
+        <div style={{ marginTop: "10px" }}>
+          <p>Select a color:</p>
+          {["red","blue","cyan","purple","green","yellow","pink"].map((c) => (
+            <button
+              key={c}
+              onClick={() => setColor(c)}
+              style={{
+                backgroundColor: c,
+                color: "#fff",
+                margin: "0 5px",
+                padding: "10px",
+                border: color === c ? "3px solid #000" : "none",
+                cursor: "pointer"
+              }}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginTop: "20px" }}>
+          <button
+            onClick={handleJoinGame}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: color,
+              color: "#111",
+              border: "none",
+              borderRadius: "5px",
+              cursor: "pointer",
+            }}
+          >
+            Join Game
+          </button>
+        </div>
       </div>
+    );
+  }
 
-      <p>
-        {selectedNode
-          ? `Selected FROM node: ${selectedNode}`
-          : 'No node currently selected.'}
-      </p>
+  // Once we're past the lobby, show the game area
+  // But the game might not be fully started if not everyone has picked a node
+  let statusMessage = "";
+  if (!gameStarted) {
+    // Not started yet
+    if (!hasSelectedStartNode) {
+      statusMessage = "Select a starting node.";
+    } else {
+      statusMessage = "Waiting for other players...";
+    }
+  } else {
+    statusMessage = "Game in progress.";
+  }
 
-      <canvas
-        ref={canvasRef}
-        width={400}
-        height={400}
-        style={{ border: '1px solid black' }}
-        onClick={handleCanvasClick}
-      />
+  return (
+    <div style={{ textAlign: "center" }}>
+      <h1>Untitled Graph Game</h1>
+      <p>{statusMessage}</p>
+
+      {gameState ? (
+        <>
+          {/* For sending troops once the game has started */}
+          {gameStarted && (
+            <div style={{ marginBottom: "1rem" }}>
+              <div>
+                <label>Troops to send: {troopAmount}</label>
+                <input
+                  type="range"
+                  min={10}
+                  max={200}
+                  value={troopAmount}
+                  onChange={(e) => setTroopAmount(Number(e.target.value))}
+                  style={{ marginLeft: "10px", width: "200px" }}
+                />
+              </div>
+              <div style={{ marginTop: "10px" }}>
+                <button onClick={handleSendTroops}>Send Troops</button>
+              </div>
+
+              <div style={{ marginTop: "10px" }}>
+                <p>Sending node selected: {selectedFromNode ?? "None"}</p>
+                <p>Receiving node selected: {selectedToNode ?? "None"}</p>
+              </div>
+            </div>
+          )}
+
+          <svg width={300} height={300} style={{ border: "1px solid black" }}>
+            {renderEdges()}
+            {renderNodes()}
+          </svg>
+        </>
+      ) : (
+        <p>Loading game state...</p>
+      )}
     </div>
   );
-}
+};
 
 export default App;
