@@ -40,6 +40,7 @@ const App: React.FC = () => {
   const [selectedFromNode, setSelectedFromNode] = useState<number | null>(null);
   const [selectedToNode, setSelectedToNode] = useState<number | null>(null);
   const [troopAmount, setTroopAmount] = useState<number>(10);
+  const MAX_TROOPS_TO_SEND = 100;
 
   // Lobby & player info
   const [name, setName] = useState("");
@@ -101,6 +102,11 @@ const App: React.FC = () => {
 
     if (name.trim() === "") {
       alert("Please enter a valid name!");
+      return;
+    }
+
+    if (color === "#ffffff") {
+      alert("Please select a color!");
       return;
     }
 
@@ -188,7 +194,7 @@ const App: React.FC = () => {
 
     return gameState.nodes.map((node) => {
       const { x, y } = NODE_POSITIONS[node.id];
-      const fillColor = node.ownerColor ? node.ownerColor : "gray";
+      const fillColor = node.ownerColor ? node.ownerColor : "#868686";
 
       // Outline if this node is the currently selected "from" node
       const isFromSelected = node.id === selectedFromNode;
@@ -210,7 +216,7 @@ const App: React.FC = () => {
             y={y + 5}
             textAnchor="middle"
             fontSize={14}
-            fill="white"
+            fill="#171717"
             fontWeight="bold"
           >
             {node.troops}
@@ -237,21 +243,22 @@ const App: React.FC = () => {
         </label>
         <div style={{ marginTop: "10px" }}>
           <p>Select a color:</p>
-          {["red","blue","cyan","purple","green","yellow","pink"].map((c) => (
+          {/* Red Blue Cyan Purple Green Pink */}
+          {["#f52900", "#5454ff", "#00ccf5", "#7b00f5", "#258030", "#e900f5"].map((c) => (
             <button
               key={c}
               onClick={() => setColor(c)}
               style={{
                 backgroundColor: c,
-                color: "#fff",
+                width: "30px",
+                height: "42px",
                 margin: "0 5px",
-                padding: "10px",
-                border: color === c ? "3px solid #000" : "none",
-                cursor: "pointer"
+                border: color === c ? "3px solid #000" : "2px solid #aaa",
+                borderRadius: "50%",
+                cursor: "pointer",
+                display: "inline-block",
               }}
-            >
-              {c}
-            </button>
+            />
           ))}
         </div>
         <div style={{ marginTop: "20px" }}>
@@ -260,8 +267,8 @@ const App: React.FC = () => {
             style={{
               padding: "10px 20px",
               backgroundColor: color,
-              color: "#111",
-              border: "none",
+              color: "#171717",
+              border: color === "#171717" ? "3px solid #171717" : "3px solid #171717",
               borderRadius: "5px",
               cursor: "pointer",
             }}
@@ -284,51 +291,84 @@ const App: React.FC = () => {
       statusMessage = "Waiting for other players...";
     }
   } else {
-    statusMessage = "Game in progress.";
+    statusMessage = "";
   }
 
-  return (
-    <div style={{ textAlign: "center" }}>
-      <h1>Untitled Graph Game</h1>
-      <p>{statusMessage}</p>
+return (
+  <div style={{ textAlign: "center" }}>
+    <h2>Untitled Graph Game</h2>
+    <p>{statusMessage}</p>
 
-      {gameState ? (
-        <>
-          {/* For sending troops once the game has started */}
-          {gameStarted && (
-            <div style={{ marginBottom: "1rem" }}>
-              <div>
-                <label>Troops to send: {troopAmount}</label>
-                <input
-                  type="range"
-                  min={10}
-                  max={200}
-                  value={troopAmount}
-                  onChange={(e) => setTroopAmount(Number(e.target.value))}
-                  style={{ marginLeft: "10px", width: "200px" }}
-                />
-              </div>
-              <div style={{ marginTop: "10px" }}>
-                <button onClick={handleSendTroops}>Send Troops</button>
-              </div>
+    {gameState ? (
+      <>
+        <svg width={300} height={300} style={{ border: "1px solid black" }}>
+          {renderEdges()}
+          {renderNodes()}
+        </svg>
 
-              <div style={{ marginTop: "10px" }}>
-                <p>Sending node selected: {selectedFromNode ?? "None"}</p>
-                <p>Receiving node selected: {selectedToNode ?? "None"}</p>
-              </div>
+        {/* Troop modification UI and node selection details below the game */}
+        {gameStarted && (
+           <div style={{ marginTop: "1rem" }}>
+          {/* Main troop sending button */}
+          <div>
+            <button
+              style={{
+                padding: "10px 30px", // Larger padding for a bigger button
+                fontSize: "20px", // Larger font size for text
+                marginRight: "10px",
+              }}
+              onClick={handleSendTroops}
+            >
+              Send {troopAmount} Troops
+            </button>
+          </div>
+            {/* Troop increment buttons */}
+            <div style={{ marginTop: "10px" }}>
+              <button
+                style={{ marginRight: "5px", padding: "5px 10px" }}
+                onClick={() => setTroopAmount((prev) => Math.min(prev + 5, MAX_TROOPS_TO_SEND))}
+              >
+                +5
+              </button>
+              <button
+                style={{ marginRight: "5px", padding: "5px 10px" }}
+                onClick={() => setTroopAmount((prev) => Math.min(prev + 10, MAX_TROOPS_TO_SEND))}
+              >
+                +10
+              </button>
+              <button
+                style={{ marginRight: "5px", padding: "5px 10px" }}
+                onClick={() => setTroopAmount((prev) => Math.min(prev + 25, MAX_TROOPS_TO_SEND))}
+              >
+                +25
+              </button>
+              <button
+                style={{ marginRight: "5px", padding: "5px 10px" }}
+                onClick={() => setTroopAmount((prev) => Math.min(prev + 50, MAX_TROOPS_TO_SEND))}
+              >
+                +50
+              </button>
+              <button
+                style={{ padding: "5px 10px" }}
+                onClick={() => setTroopAmount(10)}
+              >
+                Clear
+              </button>
             </div>
-          )}
 
-          <svg width={300} height={300} style={{ border: "1px solid black" }}>
-            {renderEdges()}
-            {renderNodes()}
-          </svg>
-        </>
-      ) : (
-        <p>Loading game state...</p>
-      )}
-    </div>
+            {/* Sending and receiving node details */}
+            <div style={{ marginTop: "10px" }}>
+              <p>Sending node selected: {selectedFromNode ?? "None"}</p>
+              <p>Receiving node selected: {selectedToNode ?? "None"}</p>
+            </div>
+          </div>
+        )}
+      </>
+    ) : (
+      <p>Loading game state...</p>
+    )}
+  </div>
   );
-};
+}
 
 export default App;
