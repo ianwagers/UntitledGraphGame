@@ -15,11 +15,13 @@ interface NodeData {
 
 interface GameState {
   nodes: NodeData[];
+  nodePositions: { [id: number]: { x: number; y: number } };
 }
 
 const SOCKET_SERVER_URL = "http://10.0.0.187:3001"; // Replace with your server IP/port
 
 // Pre-define positions for each node in a 3x3 layout
+/*
 const NODE_POSITIONS: Record<number, { x: number; y: number }> = {
   1: { x: 50,  y: 50  },
   2: { x: 150, y: 50  },
@@ -31,12 +33,14 @@ const NODE_POSITIONS: Record<number, { x: number; y: number }> = {
   8: { x: 150, y: 250 },
   9: { x: 250, y: 250 },
 };
+*/
 
 const App: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
 
   // Track troop sending
+  const [nodePositions, setNodePositions] = useState<{ [id: number]: { x: number; y: number } } | null>(null);
   const [selectedFromNode, setSelectedFromNode] = useState<number | null>(null);
   const [selectedToNode, setSelectedToNode] = useState<number | null>(null);
   const [troopAmount, setTroopAmount] = useState<number>(10);
@@ -69,6 +73,7 @@ const App: React.FC = () => {
     // Listen for game state updates
     newSocket.on("gameState", (state: GameState) => {
       setGameState(state);
+      setNodePositions(state.nodePositions);
     });
 
     // Listen for "startGame" event from server
@@ -160,71 +165,78 @@ const App: React.FC = () => {
     });
   };
 
-  // Render edges (lines) for adjacency
-  const renderEdges = () => {
-    if (!gameState) return null;
+// Render edges (lines) for adjacency
+const renderEdges = () => {
+  if (!gameState) return null;
+  if (!nodePositions) return null;
 
-    const lines: React.ReactNode[] = [];
-    for (let node of gameState.nodes) {
-      const { x: x1, y: y1 } = NODE_POSITIONS[node.id];
-      for (let adj of node.adjacency) {
-        // draw each edge only once
-        if (adj > node.id) {
-          const { x: x2, y: y2 } = NODE_POSITIONS[adj];
-          lines.push(
-            <line
-              key={`edge-${node.id}-${adj}`}
-              x1={x1}
-              y1={y1}
-              x2={x2}
-              y2={y2}
-              stroke="black"
-              strokeWidth={2}
-            />
-          );
+  const lines: React.ReactNode[] = [];
+  for (let node of gameState.nodes) {
+    const { x: x1, y: y1 } = nodePositions[node.id];
+    for (let adj of node.adjacency) {
+      // Draw each edge only once
+      if (adj > node.id) {
+        if (!nodePositions[adj]) {
+          console.error(`Missing position for adjacent node ${adj}`);
+          continue; // Skip undefined positions
         }
+        const { x: x2, y: y2 } = nodePositions[adj];
+        lines.push(
+          <line
+            key={`edge-${node.id}-${adj}`}
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            stroke="black"
+            strokeWidth={2}
+          />
+        );
       }
     }
-    return lines;
-  };
+  }
+  return lines;
+};
 
-  // Render the 9 circles (one for each node)
-  const renderNodes = () => {
-    if (!gameState) return null;
+// Render the 25 circles (one for each node)
+const renderNodes = () => {
+  if (!gameState) return null;
+  if (!nodePositions) return null;
 
-    return gameState.nodes.map((node) => {
-      const { x, y } = NODE_POSITIONS[node.id];
-      const fillColor = node.ownerColor ? node.ownerColor : "#868686";
+  return gameState.nodes.map((node) => {
+    const { x, y } = nodePositions[node.id];
+    const fillColor = node.ownerColor ? node.ownerColor : "#868686";
 
-      // Outline if this node is the currently selected "from" node
-      const isFromSelected = node.id === selectedFromNode;
+    // Outline if this node is the currently selected "from" node
+    const isFromSelected = node.id === selectedFromNode;
+    const isToSelected = node.id === selectedToNode;
 
-      return (
-        <React.Fragment key={node.id}>
-          <circle
-            cx={x}
-            cy={y}
-            r={20}
-            fill={fillColor}
-            stroke={isFromSelected ? "yellow" : "black"}
-            strokeWidth={isFromSelected ? 4 : 2}
-            onClick={() => handleNodeClick(node.id)}
-            style={{ cursor: "pointer" }}
-          />
-          <text
-            x={x}
-            y={y + 5}
-            textAnchor="middle"
-            fontSize={14}
-            fill="#171717"
-            fontWeight="bold"
-          >
-            {node.troops}
-          </text>
-        </React.Fragment>
-      );
-    });
-  };
+    return (
+      <React.Fragment key={node.id}>
+        <circle
+          cx={x}
+          cy={y}
+          r={20}
+          fill={fillColor}
+          stroke={isFromSelected ? "yellow" : isToSelected ? "yellow" : "black"}
+          strokeWidth={isFromSelected ? 4 : 2}
+          onClick={() => handleNodeClick(node.id)}
+          style={{ cursor: "pointer" }}
+        />
+        <text
+          x={x}
+          y={y + 5}
+          textAnchor="middle"
+          fontSize={14}
+          fill="#171717"
+          fontWeight="bold"
+        >
+          {node.troops}
+        </text>
+      </React.Fragment>
+    );
+  });
+};
 
   // If still in the lobby, show name/color selection
   if (inLobby) {
@@ -301,7 +313,7 @@ return (
 
     {gameState ? (
       <>
-        <svg width={300} height={300} style={{ border: "1px solid black" }}>
+        <svg width={400} height={400} style={{ border: "1px solid black" }}>
           {renderEdges()}
           {renderNodes()}
         </svg>

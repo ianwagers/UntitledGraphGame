@@ -12,19 +12,52 @@ export interface NodeData {
     nodes: NodeData[];
   }
   
-  // Create initial 9-node "square" grid (3x3):
-  export function createInitialGameState(): GameState {
-    const nodes: NodeData[] = [
-      { id: 1, adjacency: [2, 4, 5],       owner: null, ownerColor: null, troops: 0 },
-      { id: 2, adjacency: [1, 3, 5],    owner: null, ownerColor: null, troops: 0 },
-      { id: 3, adjacency: [2, 5, 6],       owner: null, ownerColor: null, troops: 0 },
-      { id: 4, adjacency: [1, 5, 7],    owner: null, ownerColor: null, troops: 0 },
-      { id: 5, adjacency: [1, 2, 3, 4, 5, 6, 7, 8, 9], owner: null, ownerColor: null, troops: 0 },
-      { id: 6, adjacency: [3, 5, 9],    owner: null, ownerColor: null, troops: 0 },
-      { id: 7, adjacency: [4, 5, 8],       owner: null, ownerColor: null, troops: 0 },
-      { id: 8, adjacency: [5, 7, 9],    owner: null, ownerColor: null, troops: 0 },
-      { id: 9, adjacency: [5, 6, 8],       owner: null, ownerColor: null, troops: 0 },
-    ];
+  export function createInitialGameState(): { nodes: NodeData[]; nodePositions: { [id: number]: { x: number; y: number } } } {
+    const nodes: NodeData[] = [];
+    const NODE_POSITIONS: { [id: number]: { x: number; y: number } } = {};
+    const gridSize = 5; // 5x5 grid
+    const spacing = 75; // Spacing between nodes
+    const xOffset = 50; // Horizontal offset to move grid right
+    const yOffset = 50; // Vertical offset to move grid down
   
-    return { nodes };
+    for (let row = 0; row < gridSize; row++) {
+      for (let col = 0; col < gridSize; col++) {
+        const id = row * gridSize + col + 1; // Node ID starts from 1
+        const adjacency: number[] = [];
+  
+        // Calculate neighbors
+        if (row > 0) adjacency.push(id - gridSize); // Node above
+        if (row < gridSize - 1) adjacency.push(id + gridSize); // Node below
+        if (col > 0) adjacency.push(id - 1); // Node to the left
+        if (col < gridSize - 1) adjacency.push(id + 1); // Node to the right
+  
+        // Add main diagonal connections
+        if (row === col) {
+          if (id - gridSize - 1 > 0) adjacency.push(id - gridSize - 1); // Top-left to bottom-right
+          if (id + gridSize + 1 <= gridSize * gridSize) adjacency.push(id + gridSize + 1);
+        }
+        if (row + col === gridSize - 1) {
+          if (id - gridSize + 1 > 0) adjacency.push(id - gridSize + 1); // Top-right to bottom-left
+          if (id + gridSize - 1 <= gridSize * gridSize) adjacency.push(id + gridSize - 1);
+        }
+  
+        // Add the node to the list
+        nodes.push({
+          id,
+          adjacency,
+          owner: null,
+          ownerColor: null,
+          troops: 0,
+        });
+  
+        // Add position for the node with offset
+        NODE_POSITIONS[id] = {
+          x: col * spacing + xOffset,
+          y: row * spacing + yOffset,
+        };
+      }
+    }
+  
+    return { nodes, nodePositions: NODE_POSITIONS };
   }
+  
